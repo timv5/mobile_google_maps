@@ -1,2 +1,3 @@
-# mobile-google-maps
-Mobile app written in Flutter with Google maps
+# mobile_google_maps
+
+A new Flutter project.

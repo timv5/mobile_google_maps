@@ -1,18 +1,19 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:fab_circular_menu/fab_circular_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mobile_google_maps/model/auto_complete_result.dart';
 import 'package:mobile_google_maps/provider/search_places.dart';
 import 'package:mobile_google_maps/service/maps_service.dart';
+import 'dart:ui' as ui;
 
 class GoogleMapScreen extends ConsumerStatefulWidget {
-
-
 
   const GoogleMapScreen({Key? key}) : super(key: key);
 
@@ -38,13 +39,22 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
   bool getDirection = false;
 
   Set<Marker> _markers = Set<Marker>();
+  Set<Marker> _markersDuplicate = Set<Marker>();
   Set<Polyline> _polylines = Set<Polyline>();
+  // this serves as a unique key so we can add multiple markers in a Set<Marker>
   int markerIdCounter = 1;
   int polylineIdCounter = 1;
 
+  var radiusValue = 3000.0;
+  Set<Circle> _circles = Set<Circle>();
+  var tappedPoint;
+
+  List allFavoritePlaces = [];
+  String tokenKey = '';
+
   static const CameraPosition _kGooglePlex = CameraPosition(
     target: LatLng(37.42796133580664, -122.085749655962),
-    zoom: 14.4746,
+    zoom: 12,
   );
 
   @override
@@ -80,17 +90,41 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
       });
     }
 
+    void _setCircle(point) async {
+      final GoogleMapController controller = await _controller.future;
+      controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: point, zoom: 12)));
+      setState(() {
+        // we passed static id, so only one circle will be in this Set<Circle>
+        _circles.add(Circle(
+          circleId: CircleId('circle'),
+          center: point,
+          fillColor: Colors.blue.withOpacity(0.1),
+          strokeColor: Colors.blue,
+          strokeWidth: 1,
+          radius: radiusValue
+        ));
+        getDirection = false;
+        searchToggle = false;
+        radiusSlider = true;
+      });
+    }
+
     Widget _getGoogleMapsWidget(BuildContext context) {
       return Container(
         height: screenHeight,
         width: screenWidth,
         child: GoogleMap(
+          circles: _circles,
           mapType: MapType.normal,
           markers: _markers,
           polylines: _polylines,
           initialCameraPosition: _kGooglePlex,
           onMapCreated: (GoogleMapController controller) {
             _controller.complete(controller);
+          },
+          onTap: (point) {
+            tappedPoint = point;
+            _setCircle(point);
           },
         ),
       );
@@ -302,6 +336,129 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
       );
     }
 
+    Future<Uint8List> getBytesFromAsset(String path, int width) async {
+      ByteData data = await rootBundle.load(path);
+      ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
+      ui.FrameInfo fi = await codec.getNextFrame();
+      return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+    }
+
+    // creates a new marker, sets it a custom icon from assets and put in in _marker list
+    // name = name of the point, types = tape of the point (like restaurant), business status (open, ...)
+    void _setMarkerInRadius(LatLng point, String name, List types, var businessStatus) async {
+      var counter = markerIdCounter++;
+      final Uint8List markerIcon;
+      if (types.contains('restaurants')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/restaurants.png', 75);
+      } else if (types.contains('food')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/food.png', 75);
+      } else if (types.contains('school')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/schools.png', 75);
+      } else if (types.contains('bar')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/bars.png', 75);
+      } else if (types.contains('lodging')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/hotels.png', 75);
+      } else if (types.contains('store')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/retail-stores.png', 75);
+      } else if (types.contains('locality')) {
+        markerIcon = await getBytesFromAsset('assets/mapicons/local-services.png', 75);
+      } else {
+        markerIcon = await getBytesFromAsset('assets/mapicons/places.png', 75);
+      }
+
+      final Marker marker = Marker(
+        markerId: MarkerId('marker_$counter'),
+        position: point,
+        icon: BitmapDescriptor.fromBytes(markerIcon),
+        onTap: (){},
+      );
+      setState(() {
+        _markers.add(marker);
+      });
+    }
+
+    Widget _getRadiusSliderOnTap() {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(15.0, 30.0, 15.0, 0.0),
+        child: Container(
+          height: 50.0,
+          color: Colors.black.withOpacity(0.3),
+          child: Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  min: 1000.0,
+                  max: 7000.0,
+                  value: radiusValue,
+                  onChanged: (newValue) {
+                    radiusValue = newValue;
+                    pressedNear = false;
+                    _setCircle(tappedPoint);
+                  }
+                ),
+              ),
+              !pressedNear ?
+              IconButton(icon: Icon(Icons.near_me, color: Colors.blue,),
+                onPressed: () {
+                  // every 2 seconds can this button be clicked to take affect
+                  if (_debounce?.isActive ?? false) {
+                    _debounce?.cancel();
+                  }
+                  _debounce = Timer(Duration(seconds: 2), () async {
+                    // get places in radius
+                    var placesResult = await MapsService().getPlaceDetails(tappedPoint, radiusValue.toInt());
+                    List<dynamic> placesWithin = placesResult['results'] as List;
+                    allFavoritePlaces = placesWithin;
+                    tokenKey = placesResult['next_place_token'] ?? 'none';
+                    _markers = {};
+                    // set markers to places in radius
+                    placesWithin.forEach((e) {
+                      _setMarkerInRadius(
+                        LatLng(e['geometry']['location']['lat'], e['geometry']['location']['lng']),
+                          e['name'],
+                          e['types'],
+                          e['business_status'] ?? 'not available'
+                      );
+                    });
+                    _markersDuplicate = _markers;
+                    pressedNear = true;
+                  });
+                }
+              ) : IconButton(
+                    onPressed: () {
+                      if(_debounce?.isActive ?? false) {
+                        _debounce?.cancel();
+                      }
+
+                      _debounce = Timer(Duration(seconds: 2), () async {
+                        if (tokenKey != 'none') {
+                          var placeResult = await MapsService().getMorePlaceDetails(tokenKey);
+                          List<dynamic> placesWithin = placeResult['results'] as List;
+                          allFavoritePlaces.addAll(placesWithin);
+                          tokenKey = placeResult['next_page_token'] ?? 'none';
+
+                          // set markers to places in radius
+                          placesWithin.forEach((e) {
+                            _setMarkerInRadius(
+                                LatLng(e['geometry']['location']['lat'], e['geometry']['location']['lng']),
+                                e['name'],
+                                e['types'],
+                                e['business_status'] ?? 'not available'
+                            );
+                          });
+                        } else {
+                          print('Finished');
+                        }
+                      });
+                    },
+                    icon: Icon(Icons.mobile_friendly, color: Colors.white,)
+                  ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: Container(
         child: SingleChildScrollView(
@@ -312,7 +469,8 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
                   _getGoogleMapsWidget(context),
                   searchToggle ? _getInputSearchWidget(context) : Container(),
                   (searchFlag.searchToggle && searchToggle) ? allSearchResults.allReturnedResults.length != 0 ? _getSearchResultsWidget(context) : _getSearchResultsEmptyWidget(context) : Container(),
-                  getDirection ? _getDirectionWidget() : Container()
+                  getDirection ? _getDirectionWidget() : Container(),
+                  radiusSlider ? _getRadiusSliderOnTap() : Container(),
                 ]
               )
             ],

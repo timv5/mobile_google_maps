@@ -39,8 +39,9 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
   bool getDirection = false;
 
   Set<Marker> _markers = Set<Marker>();
-  Set<Marker> _markersDuplicate = Set<Marker>();
   Set<Polyline> _polylines = Set<Polyline>();
+  Set<Marker> _markersDuplicate = Set<Marker>();
+
   // this serves as a unique key so we can add multiple markers in a Set<Marker>
   int markerIdCounter = 1;
   int polylineIdCounter = 1;
@@ -52,10 +53,108 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
   List allFavoritePlaces = [];
   String tokenKey = '';
 
+  // reviews and place image related variables
+  late PageController _pageController;
+  int prevPage = 0;
+  var tappedPlaceDetail;
+  String placeImg = '';
+  final String API_KEY = 'YOUR_KEY';
+  var selectedPlaceDetails;
+  var photoGalleryIndex = 0;
+  bool showBlankCard = false;
+
   static const CameraPosition _kGooglePlex = CameraPosition(
     target: LatLng(37.42796133580664, -122.085749655962),
     zoom: 12,
   );
+
+  @override
+  void initState() {
+    _pageController = PageController(initialPage: 1, viewportFraction: 0.85)..addListener(_onScroll);
+    super.initState();
+  }
+
+  Future<Uint8List> getBytesFromAsset(String path, int width) async {
+    ByteData data = await rootBundle.load(path);
+    ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
+    ui.FrameInfo fi = await codec.getNextFrame();
+    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+  }
+
+  // creates a new marker, sets it a custom icon from assets and put in in _marker list
+  // name = name of the point, types = tape of the point (like restaurant), business status (open, ...)
+  void _setMarkerInRadius(LatLng point, String name, List types, var businessStatus) async {
+    var counter = markerIdCounter++;
+    final Uint8List markerIcon;
+    if (types.contains('restaurants')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/restaurants.png', 75);
+    } else if (types.contains('food')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/food.png', 75);
+    } else if (types.contains('school')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/schools.png', 75);
+    } else if (types.contains('bar')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/bars.png', 75);
+    } else if (types.contains('lodging')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/hotels.png', 75);
+    } else if (types.contains('store')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/retail-stores.png', 75);
+    } else if (types.contains('locality')) {
+      markerIcon = await getBytesFromAsset('assets/mapicons/local-services.png', 75);
+    } else {
+      markerIcon = await getBytesFromAsset('assets/mapicons/places.png', 75);
+    }
+
+    final Marker marker = Marker(
+      markerId: MarkerId('marker_$counter'),
+      position: point,
+      icon: BitmapDescriptor.fromBytes(markerIcon),
+      onTap: (){},
+    );
+    setState(() {
+      _markers.add(marker);
+    });
+  }
+
+  Future<void> goToTappedPlace() async {
+    final GoogleMapController controller = await _controller.future;
+    _markers = {};
+    var selectedPlace = allFavoritePlaces[_pageController.page!.toInt()];
+    double lat = selectedPlace['geometry']['location']['lat'];
+    double lng = selectedPlace['geometry']['location']['lng'];
+    _setMarkerInRadius(
+        LatLng(lat, lng),
+        selectedPlace['name'] ?? 'no name',
+        selectedPlace['types'],
+        selectedPlace['business_status'] ?? 'none'
+    );
+
+    controller.animateCamera(CameraUpdate.newCameraPosition(
+        CameraPosition(target: LatLng(lat, lng), zoom: 14.0, bearing: 45.0, tilt: 45.0),
+    ));
+  }
+
+  void _onScroll() {
+    if (_pageController.page!.toInt() != prevPage) {
+      prevPage = _pageController.page!.toInt();
+      cardTapped = false;
+      photoGalleryIndex = 1;
+      showBlankCard = false;
+      goToTappedPlace();
+      fetchImage();
+    }
+  }
+
+  void fetchImage() async {
+    if (_pageController.page != null) {
+      if (allFavoritePlaces[_pageController.page!.toInt()]['photos'] != null) {
+        setState(() {
+          placeImg = allFavoritePlaces[_pageController.page!.toInt()]['photos'][0]['photo_reference'];
+        });
+      } else {
+        placeImg = '';
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,47 +435,6 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
       );
     }
 
-    Future<Uint8List> getBytesFromAsset(String path, int width) async {
-      ByteData data = await rootBundle.load(path);
-      ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
-      ui.FrameInfo fi = await codec.getNextFrame();
-      return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
-    }
-
-    // creates a new marker, sets it a custom icon from assets and put in in _marker list
-    // name = name of the point, types = tape of the point (like restaurant), business status (open, ...)
-    void _setMarkerInRadius(LatLng point, String name, List types, var businessStatus) async {
-      var counter = markerIdCounter++;
-      final Uint8List markerIcon;
-      if (types.contains('restaurants')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/restaurants.png', 75);
-      } else if (types.contains('food')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/food.png', 75);
-      } else if (types.contains('school')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/schools.png', 75);
-      } else if (types.contains('bar')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/bars.png', 75);
-      } else if (types.contains('lodging')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/hotels.png', 75);
-      } else if (types.contains('store')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/retail-stores.png', 75);
-      } else if (types.contains('locality')) {
-        markerIcon = await getBytesFromAsset('assets/mapicons/local-services.png', 75);
-      } else {
-        markerIcon = await getBytesFromAsset('assets/mapicons/places.png', 75);
-      }
-
-      final Marker marker = Marker(
-        markerId: MarkerId('marker_$counter'),
-        position: point,
-        icon: BitmapDescriptor.fromBytes(markerIcon),
-        onTap: (){},
-      );
-      setState(() {
-        _markers.add(marker);
-      });
-    }
-
     Widget _getRadiusSliderOnTap() {
       return Padding(
         padding: EdgeInsets.fromLTRB(15.0, 30.0, 15.0, 0.0),
@@ -471,6 +529,7 @@ class _GoogleMapScreenState extends ConsumerState<GoogleMapScreen> {
                   (searchFlag.searchToggle && searchToggle) ? allSearchResults.allReturnedResults.length != 0 ? _getSearchResultsWidget(context) : _getSearchResultsEmptyWidget(context) : Container(),
                   getDirection ? _getDirectionWidget() : Container(),
                   radiusSlider ? _getRadiusSliderOnTap() : Container(),
+                  // pressedNear ? _getPlaceDetailsAndReviews() : Container(),
                 ]
               )
             ],

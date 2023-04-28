@@ -7,8 +7,7 @@ Google maps project with features:
 This project was made with a help of: https://www.youtube.com/watch?v=x0QNPHYATj4
 
 ## Screens
-###Splash screen
-
+### Splash screen
 ![splash_scree](https://user-images.githubusercontent.com/17574739/235215176-809e9255-e6a6-4800-a47f-bdb317d22acc.png)
 
 ### First screen

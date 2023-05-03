@@ -1,15 +1,25 @@
 # mobile_google_maps
-Google maps project with features:
+Flutter application using Google maps. Features:
 - searching through google maps
 - directions from-to
 - selecting points in selected radius
 
 This project was made with a help of: https://www.youtube.com/watch?v=x0QNPHYATj4
 
+## Technologies used
+- flutter
+- dart
+
+## How to start a project? 
+Replace variable API_KEY with your google api key accessabe on https://console.cloud.google.com/ and enable all relevant apis.
+Places where api key is used:
+- maps_screen.dart
+- AndroidManifest.xml
+- google_maps_screen.dart
+- AppDelegate.swift
+
 ## Screens
-
-###Splash screen
-
+### Splash screen
 ![splash_scree](https://user-images.githubusercontent.com/17574739/235215176-809e9255-e6a6-4800-a47f-bdb317d22acc.png)
 
 ### First screen
@@ -28,3 +38,6 @@ This project was made with a help of: https://www.youtube.com/watch?v=x0QNPHYATj
 ![directions](https://user-images.githubusercontent.com/17574739/235215767-ab1f4d2e-0ebc-4092-a1f7-897a2c820251.png)
 
 ![directions_complete](https://user-images.githubusercontent.com/17574739/235215890-a8c2176b-4a91-4706-ac1f-ee69f8fbe6bd.png)
+
+### Selected places in radius
+![radius](https://user-images.githubusercontent.com/17574739/235221079-b88b1e9a-ea21-40f4-8b83-4ce44b9cb8b4.png)

@@ -14,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Google maps',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(),
       home: SplashScreen(),
